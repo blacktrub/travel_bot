@@ -55,3 +55,4 @@ ENV/
 .ropeproject
 /site
 .mypy_cache/
+bot/token
