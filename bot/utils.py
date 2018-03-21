@@ -10,25 +10,27 @@ class OzonApi:
     def __init__(self):
         pass
 
-    def __post(self, url: str, body: dict=None):
+    def __post(self, url: str, body: dict=None, timeout: int=10):
         return self.__request(
             method='post',
             url=url,
             json=body,
+            timeout=timeout,
         )
 
-    def __get(self, url: str, query: dict=None):
+    def __get(self, url: str, query: dict=None, timeout: int=10):
         return self.__request(
             method='get',
             url=url,
             params=query,
+            timeout=timeout,
         )
 
     @staticmethod
     def __request(attempts: int=3, **kwargs):
         for _ in range(attempts):
             try:
-                return requests.request(**kwargs, timeout=30).json()
+                return requests.request(**kwargs).json()
             except Exception as e:
                 raise e
 
