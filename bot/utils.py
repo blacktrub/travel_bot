@@ -1,9 +1,69 @@
 import datetime
 
 import requests
+from transitions import Machine
 
 from .constants import OZON_PARTNER_ID, OZON_API_URL, \
     OZON_DATE_FORMAT, OZON_STATIC_URL
+
+
+class User:
+    states = [
+        'select_type',
+        'select_place_from',
+        'select_date_from',
+        'select_tour_place',
+        'select_date_to',
+        'search_success',
+        'search_fail',
+    ]
+
+    transitions = [
+        {
+            'trigger': 'to_start',
+            'source': '*',
+            'dest': 'select_type'
+        },
+        {
+            'trigger': 'to_select_place_from',
+            'source': 'select_type',
+            'dest': 'select_place_from'
+        },
+        {
+            'trigger': 'to_select_date_from',
+            'source': 'select_place_from',
+            'dest': 'select_date_from'
+        },
+        {
+            'trigger': 'to_select_tour_place',
+            'source': 'select_date_from',
+            'dest': 'select_tour_place'
+        },
+        {
+            'trigger': 'to_select_date_to',
+            'source': 'select_tour_place',
+            'dest': 'select_date_to'
+        },
+        {
+            'trigger': 'to_search_success',
+            'source': 'select_date_to',
+            'dest': 'search_success'
+        },
+        {
+            'trigger': 'to_search_fail',
+            'source': 'select_date_to',
+            'dest': 'search_fail'
+        },
+    ]
+
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.machine = Machine(
+            model=self,
+            states=User.states,
+            initial=User.states[0],
+            transitions=User.transitions
+        )
 
 
 class OzonApi:
