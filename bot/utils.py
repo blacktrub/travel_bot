@@ -1,10 +1,13 @@
 import datetime
+from redis import StrictRedis
 
 import requests
 from transitions import Machine
 
 from .constants import OZON_PARTNER_ID, OZON_API_URL, \
-    OZON_DATE_FORMAT, OZON_STATIC_URL
+    OZON_DATE_FORMAT, OZON_STATIC_URL, REDIS_HOST, REDIS_PORT, REDIS_DB
+
+redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 
 
 class User:
@@ -64,6 +67,39 @@ class User:
             initial=User.states[0],
             transitions=User.transitions
         )
+
+        self.type = None
+        self.place_from = None
+        self.place_to = None
+        self.date_from = None
+        self.date_to = None
+
+    def __gen_key(self, postfix: str):
+        return '{}_{}'.format(self.user_id, postfix)
+
+    @staticmethod
+    def __set_to_redis(key, value):
+        redis.set(key, value)
+
+    @staticmethod
+    def __get_from_redis(key):
+        return redis.get(key)
+
+    def flush(self):
+        self.__set_to_redis(self.__gen_key('state'), self.state)
+        self.__set_to_redis(self.__gen_key('type'), self.type)
+        self.__set_to_redis(self.__gen_key('place_from'), self.place_from)
+        self.__set_to_redis(self.__gen_key('place_to'), self.place_to)
+        self.__set_to_redis(self.__gen_key('date_from'), self.date_from)
+        self.__set_to_redis(self.__gen_key('date_to'), self.date_to)
+
+    def load(self):
+        self.machine.set_state(self.__get_from_redis(self.__gen_key('state')))
+        self.type = self.__get_from_redis(self.__gen_key('type'))
+        self.place_from = self.__get_from_redis(self.__gen_key('place_from'))
+        self.place_to = self.__get_from_redis(self.__gen_key('place_to'))
+        self.date_from = self.__get_from_redis(self.__gen_key('date_from'))
+        self.date_to = self.__get_from_redis(self.__gen_key('date_to'))
 
 
 class OzonApi:
