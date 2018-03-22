@@ -13,9 +13,10 @@ redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 class User:
     states = [
         'select_type',
+        'select_hotel',
+        'select_tour_place',
         'select_place_from',
         'select_date_from',
-        'select_tour_place',
         'select_date_to',
         'search_success',
         'search_fail',
@@ -28,8 +29,18 @@ class User:
             'dest': 'select_type'
         },
         {
-            'trigger': 'to_select_place_from',
+            'trigger': 'to_select_hotel',
             'source': 'select_type',
+            'dest': 'select_hotel',
+        },
+        {
+            'trigger': 'to_select_tour_place',
+            'source': 'select_type',
+            'dest': 'select_tour_place'
+        },
+        {
+            'trigger': 'to_select_place_from',
+            'source': ['select_hotel', 'select_tour_place'],
             'dest': 'select_place_from'
         },
         {
@@ -38,13 +49,8 @@ class User:
             'dest': 'select_date_from'
         },
         {
-            'trigger': 'to_select_tour_place',
-            'source': 'select_date_from',
-            'dest': 'select_tour_place'
-        },
-        {
             'trigger': 'to_select_date_to',
-            'source': 'select_tour_place',
+            'source': 'select_date_from',
             'dest': 'select_date_to'
         },
         {
