@@ -100,7 +100,10 @@ class User:
         self.__set_to_redis(self.__gen_key('date_to'), self.date_to)
 
     def load(self):
-        self.machine.set_state(self.__get_from_redis(self.__gen_key('state')))
+        state = self.__get_from_redis(self.__gen_key('state'))
+        if state is not None:
+            self.machine.set_state(state)
+
         self.type = self.__get_from_redis(self.__gen_key('type'))
         self.place_from = self.__get_from_redis(self.__gen_key('place_from'))
         self.place_to = self.__get_from_redis(self.__gen_key('place_to'))
