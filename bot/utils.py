@@ -100,7 +100,7 @@ class User:
         self.__set_to_redis(self.__gen_key('date_to'), self.date_to)
 
     def load(self):
-        state = self.__get_from_redis(self.__gen_key('state'))
+        state = self.__get_from_redis(self.__gen_key('state')).decode()
         if state is not None:
             self.machine.set_state(state)
 
