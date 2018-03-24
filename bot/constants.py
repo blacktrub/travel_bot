@@ -23,6 +23,12 @@ REDIS_HOST = '127.0.0.1'
 REDIS_PORT = 6379
 REDIS_DB = 0
 
+DB_NAME = 'travelbot'
+DB_USERNAME = 'admin'
+DB_PASSWORD = 'admin'
+DB_HOST = '127.0.0.1'
+DB_PORT = 5432
+
 
 class UserStates(enum.Enum):
     SELECT_TYPE = 'select_type'

@@ -5,7 +5,7 @@ from telebot import types
 
 from bot.constants import TOKEN, POOLING_TIMEOUT, SearchType, UserStates, \
     USER_DATE_FORMAT
-from bot.utils import User, api, search_in_list
+from bot.utils import User, api, search_in_list, BotUser
 
 
 bot = telebot.TeleBot(TOKEN)
@@ -14,6 +14,7 @@ bot = telebot.TeleBot(TOKEN)
 @bot.message_handler(commands=['start'])
 def welcome(message):
     bot.send_message(message.chat.id, 'Добро пожаловать!')
+    BotUser.get_or_create(uid=message.from_user.id)
     select_type(message)
 
 

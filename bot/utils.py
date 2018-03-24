@@ -1,15 +1,24 @@
 import datetime
-from redis import StrictRedis
 
 import requests
 from requests.auth import HTTPBasicAuth
 from transitions import Machine
+from redis import StrictRedis
+import peewee
 
 from .constants import OZON_PARTNER_ID, OZON_API_URL, \
     OZON_DATE_FORMAT, OZON_STATIC_URL, OZON_USERNAME, OZON_PASSWORD, \
-    REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates, City, SearchType
+    REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates, City, SearchType, \
+    DB_NAME, DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT
 
 redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+db = peewee.PostgresqlDatabase(
+    DB_NAME,
+    user=DB_USERNAME,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
+)
 
 
 class User:
@@ -245,3 +254,17 @@ api = OzonApi()
 
 def search_in_list(query: str, data: list):
     return [x for x in data if query.lower() in x.name.lower()]
+
+
+class BaseModel(peewee.Model):
+    class Meta:
+        database = db
+
+
+class BotUser(BaseModel):
+    uid = peewee.CharField()
+
+
+class Channel(BaseModel):
+    user = peewee.ForeignKeyField(BotUser, backref='channels')
+    url = peewee.CharField()

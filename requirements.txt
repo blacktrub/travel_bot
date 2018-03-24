@@ -1,3 +1,5 @@
 pyTelegramBotAPI==3.6.1
 transitions==0.6.4
 redis==2.10.6
+peewee==3.1.5
+psycopg2==2.7.4
