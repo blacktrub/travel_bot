@@ -2,10 +2,12 @@ import datetime
 from redis import StrictRedis
 
 import requests
+from requests.auth import HTTPBasicAuth
 from transitions import Machine
 
 from .constants import OZON_PARTNER_ID, OZON_API_URL, \
-    OZON_DATE_FORMAT, OZON_STATIC_URL, REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates
+    OZON_DATE_FORMAT, OZON_STATIC_URL, OZON_USERNAME, OZON_PASSWORD, \
+    REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates, City, SearchType
 
 redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 
@@ -74,12 +76,15 @@ class User:
         self.date_from = None
         self.date_to = None
 
+        self.load()
+
     def __gen_key(self, postfix: str):
         return '{}_{}'.format(self.user_id, postfix)
 
     @staticmethod
     def __set_to_redis(key, value):
-        redis.set(key, value)
+        if value is not None:
+            redis.set(key, value)
 
     @staticmethod
     def __get_from_redis(key):
@@ -94,15 +99,43 @@ class User:
         self.__set_to_redis(self.__gen_key('date_to'), self.date_to)
 
     def load(self):
-        state = self.__get_from_redis(self.__gen_key('state')).decode()
+        state = self.__get_from_redis(self.__gen_key('state'))
         if state is not None:
-            self.machine.set_state(state)
+            self.machine.set_state(state.decode())
 
-        self.type = self.__get_from_redis(self.__gen_key('type'))
-        self.place_from = self.__get_from_redis(self.__gen_key('place_from'))
-        self.place_to = self.__get_from_redis(self.__gen_key('place_to'))
-        self.date_from = self.__get_from_redis(self.__gen_key('date_from'))
-        self.date_to = self.__get_from_redis(self.__gen_key('date_to'))
+        t = self.__get_from_redis(self.__gen_key('type'))
+        if t is not None:
+            self.type = t.decode()
+
+        place_from = self.__get_from_redis(self.__gen_key('place_from'))
+        if place_from is not None:
+            self.place_from = int(place_from)
+
+        place_to = self.__get_from_redis(self.__gen_key('place_to'))
+        if place_from is not None:
+            self.place_to = int(place_to)
+
+        date_from = self.__get_from_redis(self.__gen_key('date_from'))
+        if date_from is not None:
+            self.date_from = datetime.datetime.strptime(
+                date_from.decode(),
+                OZON_DATE_FORMAT,
+            ).date()
+
+        date_to = self.__get_from_redis(self.__gen_key('date_to'))
+        if date_to is not None:
+            self.date_to = datetime.datetime.strptime(
+                date_to.decode(),
+                OZON_DATE_FORMAT,
+            ).date()
+
+    @property
+    def is_search_by_hotel(self):
+        return self.type == SearchType.HOTEL.value
+
+    @property
+    def is_search_by_city(self):
+        return self.type == SearchType.CITY.value
 
 
 class OzonApi:
@@ -129,12 +162,21 @@ class OzonApi:
     def __request(attempts: int=3, **kwargs):
         for _ in range(attempts):
             try:
-                return requests.request(**kwargs).json()
+                return requests.request(
+                    auth=HTTPBasicAuth(OZON_USERNAME, OZON_PASSWORD),
+                    **kwargs
+                ).json(strict=False)
             except Exception as e:
                 raise e
 
-    def cities(self):
+    def cities_from(self):
         return self.__get(url=OZON_STATIC_URL + 'departures.json')
+
+    def list_city_names_from(self):
+        return [
+            City(city['name_ru'], city['id'])
+            for city in self.cities_from()
+        ]
 
     def meal_types(self):
         return self.__get(url=OZON_STATIC_URL + 'MealTypes.json')
@@ -142,8 +184,15 @@ class OzonApi:
     def hotel_list(self):
         return self.__get(url=OZON_STATIC_URL + 'HotelList.json')
 
-    def destinations(self):
+    def cities_to(self):
         return self.__get(url=OZON_STATIC_URL + 'Destinations.json')
+
+    def list_city_names_to(self):
+        return [
+            City(city['name_ru'], city['id'])
+            for country in self.cities_to()
+            for city in country['resort']
+        ]
 
     def search_by_hotel(self,
                         place_from_id: int,
@@ -190,3 +239,9 @@ class OzonApi:
             url=OZON_API_URL + 'getOffersByGeoObject',
             body=body,
         )
+
+api = OzonApi()
+
+
+def search_in_list(query: str, data: list):
+    return [x for x in data if query.lower() in x.name.lower()]

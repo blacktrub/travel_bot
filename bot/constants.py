@@ -1,7 +1,9 @@
 import os
 import enum
+import collections
 
 
+USER_DATE_FORMAT = '%d.%m.%Y'
 FILE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 TOKEN = None
@@ -14,6 +16,8 @@ OZON_PARTNER_ID = ''
 OZON_API_URL = 'https://api.ozon.travel/tours/v1/'
 OZON_STATIC_URL = 'https://www.ozon.travel/download/fortour/'
 OZON_DATE_FORMAT = '%Y-%m-%d'
+OZON_USERNAME = 'foo'
+OZON_PASSWORD = 'boo'
 
 REDIS_HOST = '127.0.0.1'
 REDIS_PORT = 6379
@@ -32,4 +36,11 @@ class UserStates(enum.Enum):
 
     @classmethod
     def as_list(cls):
-        return [v for k, v in cls.__members__.items()]
+        return [v.value for k, v in cls.__members__.items()]
+
+
+class SearchType(enum.Enum):
+    CITY = 'По городу'
+    HOTEL = 'По отелю'
+
+City = collections.namedtuple('City', 'name id')
