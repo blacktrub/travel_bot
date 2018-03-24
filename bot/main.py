@@ -5,7 +5,7 @@ from telebot import types
 
 from bot.constants import TOKEN, POOLING_TIMEOUT, SearchType, UserStates, \
     USER_DATE_FORMAT
-from bot.utils import User, api, search_in_list, BotUser
+from bot.utils import User, api, search_in_list, BotUser, Channel
 
 
 bot = telebot.TeleBot(TOKEN)
@@ -16,6 +16,70 @@ def welcome(message):
     bot.send_message(message.chat.id, 'Добро пожаловать!')
     BotUser.get_or_create(uid=message.from_user.id)
     select_type(message)
+
+
+@bot.message_handler(commands=['list_channels'])
+def list_channels(message):
+    u = BotUser.get(uid=message.from_user.id)
+    if not u.channels:
+        msg = 'Список ваших каналов пуст, вы можете добавить канал ' \
+              'с помощью команды /add_channel @your_channel_name'
+    else:
+        msg = 'Список ваших каналов:\n' + \
+              '\n'.join([c.uid for c in u.channels])
+
+    bot.send_message(message.chat.id, msg)
+
+
+@bot.message_handler(commands=['add_channel'])
+def add_channel(message):
+    u = BotUser.get(uid=message.from_user.id)
+
+    try:
+        channel_name = message.text.strip().split()[1]
+        if '@' not in channel_name:
+            channel_name = '@' + channel_name
+
+        bot.get_chat(channel_name)
+    except telebot.apihelper.ApiException:
+        return bot.send_message(
+            message.chat.id,
+            'Произошла ошибка при добавлении канала, возможно вы пытаетесь '
+            'добавить не существующий или приватный канал',
+        )
+    except KeyError:
+        return bot.send_message(
+            message.chat.id,
+            'Не верный формат комнады, пример: /add_channel @your_channel_name'
+        )
+
+    bot.send_message(
+        message.chat.id,
+        'Вы успешно добавили канал, для репоста в ваш канал вам '
+        'необходимо дать админ права данному боту в настройках канала',
+    )
+    Channel.get_or_create(user=u, uid=channel_name)
+
+
+@bot.message_handler(commands=['delete_channel'])
+def delete_channel(message):
+    u = BotUser.get(uid=message.from_user.id)
+
+    try:
+        channel_name = message.text.strip().split()[1]
+        channel = Channel.get(user=u, uid=channel_name)
+    except KeyError:
+        return bot.send_message(
+            message.chat.id,
+            'Не верный формат комнады, пример: /delete_channel @your_channel_name'
+        )
+    except Channel.DoesNotExist:
+        return bot.send_message(
+            message.chat.id,
+            'Канал не найден',
+        )
+
+    channel.delete_instance()
 
 
 @bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_TYPE.value)

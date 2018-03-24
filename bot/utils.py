@@ -267,4 +267,4 @@ class BotUser(BaseModel):
 
 class Channel(BaseModel):
     user = peewee.ForeignKeyField(BotUser, backref='channels')
-    url = peewee.CharField()
+    uid = peewee.CharField()
