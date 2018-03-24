@@ -18,6 +18,13 @@ def welcome(message):
     select_type(message)
 
 
+@bot.message_handler(commands=['new'])
+def new(message):
+    u = User(message.from_user.id)
+    u.clear()
+    select_type(message)
+
+
 @bot.message_handler(commands=['list_channels'])
 def list_channels(message):
     u = BotUser.get(uid=message.from_user.id)

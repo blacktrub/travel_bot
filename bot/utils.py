@@ -138,6 +138,14 @@ class User:
                 OZON_DATE_FORMAT,
             ).date()
 
+    def clear(self):
+        keys = [
+            self.__gen_key(k)
+            for k in ['state', 'type', 'place_from',
+                      'place_to', 'date_from', 'date_to']
+        ]
+        redis.delete(*keys)
+
     @property
     def is_search_by_hotel(self):
         return self.type == SearchType.HOTEL.value
