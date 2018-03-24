@@ -5,63 +5,57 @@ import requests
 from transitions import Machine
 
 from .constants import OZON_PARTNER_ID, OZON_API_URL, \
-    OZON_DATE_FORMAT, OZON_STATIC_URL, REDIS_HOST, REDIS_PORT, REDIS_DB
+    OZON_DATE_FORMAT, OZON_STATIC_URL, REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates
 
 redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
 
 
 class User:
-    states = [
-        'select_type',
-        'select_hotel',
-        'select_tour_place',
-        'select_place_from',
-        'select_date_from',
-        'select_date_to',
-        'search_success',
-        'search_fail',
-    ]
+    states = UserStates.as_list()
 
     transitions = [
         {
             'trigger': 'to_start',
             'source': '*',
-            'dest': 'select_type'
+            'dest': UserStates.SELECT_TYPE.value,
         },
         {
             'trigger': 'to_select_hotel',
-            'source': 'select_type',
-            'dest': 'select_hotel',
+            'source': UserStates.SELECT_TYPE.value,
+            'dest': UserStates.SELECT_HOTEL.value,
         },
         {
             'trigger': 'to_select_tour_place',
-            'source': 'select_type',
-            'dest': 'select_tour_place'
+            'source': UserStates.SELECT_TYPE.value,
+            'dest': UserStates.SELECT_TOUR_PLACE.value,
         },
         {
             'trigger': 'to_select_place_from',
-            'source': ['select_hotel', 'select_tour_place'],
-            'dest': 'select_place_from'
+            'source': [
+                UserStates.SELECT_HOTEL.value,
+                UserStates.SELECT_TOUR_PLACE.value,
+            ],
+            'dest': UserStates.SELECT_PLACE_FROM.value,
         },
         {
             'trigger': 'to_select_date_from',
-            'source': 'select_place_from',
-            'dest': 'select_date_from'
+            'source': UserStates.SELECT_PLACE_FROM.value,
+            'dest': UserStates.SELECT_DATE_FROM.value,
         },
         {
             'trigger': 'to_select_date_to',
-            'source': 'select_date_from',
-            'dest': 'select_date_to'
+            'source': UserStates.SELECT_DATE_FROM.value,
+            'dest': UserStates.SELECT_DATE_TO.value,
         },
         {
             'trigger': 'to_search_success',
-            'source': 'select_date_to',
-            'dest': 'search_success'
+            'source': UserStates.SELECT_DATE_TO.value,
+            'dest': UserStates.SEARCH_SUCCESS.value,
         },
         {
             'trigger': 'to_search_fail',
-            'source': 'select_date_to',
-            'dest': 'search_fail'
+            'source': UserStates.SELECT_DATE_TO.value,
+            'dest': UserStates.SEARCH_FAIL.value,
         },
     ]
 
@@ -70,7 +64,7 @@ class User:
         self.machine = Machine(
             model=self,
             states=User.states,
-            initial=User.states[0],
+            initial=UserStates.SELECT_TYPE.value,
             transitions=User.transitions
         )
 
