@@ -128,7 +128,7 @@ def select_type(message):
             u.to_select_tour_place()
             text = 'Введите название города в который вы хотите поехать:'
         if message.text == SearchType.HOTEL.value:
-            u.to_select_tour_place()
+            u.to_select_hotel()
             text = 'Введите название отеля в который вы хотите поехать:'
 
         u.type = message.text
@@ -259,6 +259,23 @@ def select_date_to(message):
             message.chat.id,
             'К сожалению по вашему запросу ничего не найдено',
         )
+
+    bot_user = BotUser.get(uid=message.from_user.id)
+    if bot_user.channels and tours:
+        bot.send_message(
+            message.chat.id,
+            'Для отправки сообщения в ваши каналы, '
+            'выберите сообщение и введите команду /to_channels',
+        )
+    after_search(message)
+
+
+@bot.message_handler(func=lambda m: User(m.from_user.id).state in [UserStates.SEARCH_FAIL.value, UserStates.SEARCH_SUCCESS.value])
+def after_search(message):
+    bot.send_message(
+        message.chat.id,
+        'Для перехода в начало поиска используйте комнаду /new',
+    )
 
 
 bot.polling()
