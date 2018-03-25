@@ -230,10 +230,6 @@ def select_date_to(message):
 
     u.date_to = date
     u.flush()
-    bot.send_message(
-        message.chat.id,
-        'success',
-    )
 
     tours = []
     if u.is_search_by_city:
