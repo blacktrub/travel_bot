@@ -89,6 +89,37 @@ def delete_channel(message):
     channel.delete_instance()
 
 
+@bot.message_handler(commands=['to_channels'])
+def to_my_channels(message):
+    u = BotUser.get(uid=message.from_user.id)
+    if message.reply_to_message is None:
+        return bot.send_message(
+            message.chat.id,
+            'Вы должны сделать reply на сообщение которое хотите отправить',
+        )
+
+    if not u.channels:
+        return bot.send_message(
+            message.chat.id,
+            'Список ваших каналов пуст, вы можете добавить канал '
+            'с помощью команды /add_channel @your_channel_name',
+        )
+
+    for channel in u.channels:
+        try:
+            bot.forward_message(
+                channel.uid,
+                message.chat.id,
+                message.reply_to_message.message_id,
+            )
+        except telebot.apihelper.ApiException:
+            bot.send_message(
+                message.chat.id,
+                'Нужно предоставить боту админ права в '
+                'канале {}'.format(channel.uid)
+            )
+
+
 @bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_TYPE.value)
 def select_type(message):
     u = User(message.from_user.id)
