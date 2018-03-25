@@ -133,7 +133,8 @@ def select_type(message):
 
         u.type = message.text
         u.flush()
-        return bot.send_message(message.chat.id, text)
+        keyboard = types.ReplyKeyboardRemove()
+        return bot.send_message(message.chat.id, text, reply_markup=keyboard)
 
     keyboard = types.ReplyKeyboardMarkup(row_width=1)
 
