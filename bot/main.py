@@ -150,7 +150,21 @@ def select_type(message):
 
 @bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_HOTEL.value)
 def select_hotel(message):
-    pass
+    u = User(message.from_user.id)
+    founded_hotels = search_in_list(message.text, api.hotel_list())
+    if not founded_hotels:
+        return bot.send_message(
+            message.chat.id,
+            'Отеля с таким названием не найдено, попробуйте еще раз',
+        )
+
+    u.hotel = founded_hotels[0].id
+    u.to_select_place_from()
+    u.flush()
+    bot.send_message(
+        message.from_user.id,
+        'Введите название города из которого вы хотите поехать:',
+    )
 
 
 @bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_TOUR_PLACE.value)
@@ -160,7 +174,7 @@ def select_tour_place(message):
     if not founded_cities:
         return bot.send_message(
             message.chat.id,
-            'Города с таким названием не найдено, попробуйте еще раз'
+            'Города с таким названием не найдено, попробуйте еще раз',
         )
 
     u.place_to = founded_cities[0].id
@@ -168,7 +182,7 @@ def select_tour_place(message):
     u.flush()
     bot.send_message(
         message.chat.id,
-        'Введите название города из которого вы хотите поехать:'
+        'Введите название города из которого вы хотите поехать:',
     )
 
 
@@ -187,7 +201,7 @@ def select_tour_from(message):
     u.flush()
     bot.send_message(
         message.chat.id,
-        'Введите дату отезда в формате DD.MM.YYYY:'
+        'Введите дату отъезда в формате DD.MM.YYYY:'
     )
 
 

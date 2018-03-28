@@ -83,6 +83,7 @@ class User:
 
         self.type = None
         self.place_from = None
+        self.hotel = None
         self.place_to = None
         self.date_from = None
         self.date_to = None
@@ -105,6 +106,7 @@ class User:
         self.__set_to_redis(self.__gen_key('state'), self.state)
         self.__set_to_redis(self.__gen_key('type'), self.type)
         self.__set_to_redis(self.__gen_key('place_from'), self.place_from)
+        self.__set_to_redis(self.__gen_key('hotel'), self.hotel)
         self.__set_to_redis(self.__gen_key('place_to'), self.place_to)
         self.__set_to_redis(self.__gen_key('date_from'), self.date_from)
         self.__set_to_redis(self.__gen_key('date_to'), self.date_to)
@@ -122,8 +124,12 @@ class User:
         if place_from is not None:
             self.place_from = int(place_from)
 
+        hotel = self.__get_from_redis(self.__gen_key('hotel'))
+        if hotel is not None:
+            self.hotel = int(hotel)
+
         place_to = self.__get_from_redis(self.__gen_key('place_to'))
-        if place_from is not None:
+        if place_to is not None:
             self.place_to = int(place_to)
 
         date_from = self.__get_from_redis(self.__gen_key('date_from'))
@@ -207,7 +213,7 @@ class OzonApi:
             os.path.abspath(os.path.dirname(__file__)),
             'hotels',
         )
-        with open(hotel_file) as f:
+        with open(hotel_file, encoding='utf-8') as f:
             return [
                 Hotel(h['name'], h['id'])
                 for h in json.loads(f.readline())
