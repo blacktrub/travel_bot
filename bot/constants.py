@@ -50,3 +50,4 @@ class SearchType(enum.Enum):
     HOTEL = 'По отелю'
 
 City = collections.namedtuple('City', 'name id')
+Hotel = collections.namedtuple('Hotel', 'name id')

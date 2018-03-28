@@ -1,3 +1,5 @@
+import os
+import json
 import datetime
 
 import requests
@@ -8,7 +10,7 @@ import peewee
 
 from .constants import OZON_PARTNER_ID, OZON_API_URL, \
     OZON_DATE_FORMAT, OZON_STATIC_URL, OZON_USERNAME, OZON_PASSWORD, \
-    REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates, City, SearchType, \
+    REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates, City, Hotel, SearchType, \
     DB_NAME, DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT
 
 redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
@@ -199,7 +201,17 @@ class OzonApi:
         return self.__get(url=OZON_STATIC_URL + 'MealTypes.json')
 
     def hotel_list(self):
-        return self.__get(url=OZON_STATIC_URL + 'HotelList.json')
+        # we take info about the hotels from file
+        # because a json data from api contains syntax errors
+        hotel_file = os.path.join(
+            os.path.abspath(os.path.dirname(__file__)),
+            'hotels',
+        )
+        with open(hotel_file) as f:
+            return [
+                Hotel(h['name'], h['id'])
+                for h in json.loads(f.readline())
+            ]
 
     def cities_to(self):
         return self.__get(url=OZON_STATIC_URL + 'Destinations.json')
