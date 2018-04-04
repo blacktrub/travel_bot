@@ -323,7 +323,9 @@ class OzonApi:
                 if status is not None and status == 200:
                     response_results = data.get('Result', None)
                     if response_results is not None:
-                        results = list(response_results)
+                        results = response_results
+                        if not isinstance(results, list):
+                            results = [results]
                         break
                     else:
                         raise OzonApiNotFound
@@ -339,8 +341,8 @@ class OzonApi:
         for result in results[:MAX_RESULTS]:
             offers = []
             if u.is_search_by_city:
-                offers = min(result.get('HotelOffers', []),
-                             key=lambda x: x['PriceRur'])
+                offers = [min(result.get('HotelOffers', []),
+                             key=lambda x: x['PriceRur'])]
             elif u.is_search_by_hotel:
                 offers = result.get('Offers', [])
 
