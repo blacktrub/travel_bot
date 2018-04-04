@@ -2,32 +2,36 @@ import os
 import enum
 import collections
 
+from urllib import parse
+
+
+MAX_RESULTS = 1
 
 USER_DATE_FORMAT = '%d.%m.%Y'
 FILE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-TOKEN = None
-with open(os.path.join(FILE_DIR, 'token'), 'r') as f:
-    TOKEN = f.readline().strip()
+TOKEN = os.environ.get('TOKEN')
 
 POOLING_TIMEOUT = 10000000000000
 
-OZON_PARTNER_ID = ''
+OZON_PARTNER_ID = os.environ.get('OZON_PARTNER_ID')
 OZON_API_URL = 'https://api.ozon.travel/tours/v1/'
 OZON_STATIC_URL = 'https://www.ozon.travel/download/fortour/'
 OZON_DATE_FORMAT = '%Y-%m-%d'
-OZON_USERNAME = 'foo'
-OZON_PASSWORD = 'boo'
+OZON_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
+OZON_USERNAME = os.environ.get('OZON_USERNAME')
+OZON_PASSWORD = os.environ.get('OZON_PASSWORD')
+OZON_AUTH = OZON_USERNAME + ':' + OZON_PASSWORD
 
-REDIS_HOST = '127.0.0.1'
-REDIS_PORT = 6379
-REDIS_DB = 0
+REDIS_URL = os.environ.get('REDIS_URL')
 
-DB_NAME = 'travelbot'
-DB_USERNAME = 'admin'
-DB_PASSWORD = 'admin'
-DB_HOST = '127.0.0.1'
-DB_PORT = 5432
+DB_URL = parse.urlparse(os.environ["DATABASE_URL"])
+
+DB_NAME = DB_URL.path[1:]
+DB_USERNAME = DB_URL.username
+DB_PASSWORD = DB_URL.password
+DB_HOST = DB_URL.hostname
+DB_PORT = DB_URL.port
 
 
 class UserStates(enum.Enum):
@@ -51,3 +55,4 @@ class SearchType(enum.Enum):
 
 City = collections.namedtuple('City', 'name id')
 Hotel = collections.namedtuple('Hotel', 'name id')
+Tour = collections.namedtuple('Tour', 'name id url date_from days price')

@@ -91,26 +91,44 @@ def delete_channel(message):
 
 @bot.message_handler(commands=['to_channels'])
 def to_my_channels(message):
-    u = BotUser.get(uid=message.from_user.id)
+    db_user = BotUser.get(uid=message.from_user.id)
+    state_user = User(message.from_user.id)
     if message.reply_to_message is None:
         return bot.send_message(
             message.chat.id,
             'Вы должны сделать reply на сообщение которое хотите отправить',
         )
 
-    if not u.channels:
+    if not db_user.channels:
         return bot.send_message(
             message.chat.id,
             'Список ваших каналов пуст, вы можете добавить канал '
             'с помощью команды /add_channel @your_channel_name',
         )
 
-    for channel in u.channels:
+    if message.reply_to_message.message_id not in state_user.tours:
+        return bot.send_message(
+            message.chat.id,
+            'Сообщение не найдено, повторите поиск',
+        )
+
+    tour = state_user.tours[message.reply_to_message.message_id]
+    for channel in db_user.channels:
         try:
-            bot.forward_message(
+            btn = types.InlineKeyboardMarkup()
+            btn.add(types.InlineKeyboardButton('Бронировать', url=tour.url))
+            bot.send_message(
                 channel.uid,
-                message.chat.id,
-                message.reply_to_message.message_id,
+                'Название отеля: {}\n'
+                'Дата отправления: {}\n'
+                'Кол-во дней: {}\n'
+                'Цена: {} руб.\n'.format(
+                    tour.name,
+                    tour.date_from,
+                    tour.days,
+                    tour.price,
+                ),
+                reply_markup=btn,
             )
         except telebot.apihelper.ApiException:
             bot.send_message(
@@ -245,28 +263,33 @@ def select_date_to(message):
     u.date_to = date
     u.flush()
 
-    tours = []
-    if u.is_search_by_city:
-        tours = api.search_by_place(
-            u.place_from,
-            u.place_to,
-            u.date_from,
-            u.date_to,
-        )
-    elif u.is_search_by_hotel:
-        tours = api.search_by_hotel(
-            u.place_from,
-            u.place_to,
-            u.date_from,
-            u.date_to,
-        )
-
+    tours = api.search(u)
     if tours:
+        u.tours = {}
         u.to_search_success()
         bot.send_message(
             message.chat.id,
             'По вашему запросу найдены следующие туры:',
         )
+
+        for tour in tours:
+            btn = types.InlineKeyboardMarkup()
+            btn.add(types.InlineKeyboardButton('Бронировать', url=tour.url))
+            msg = bot.send_message(
+                message.chat.id,
+                'Название отеля: {}\n'
+                'Дата отправления: {}\n'
+                'Кол-во дней: {}\n'
+                'Цена: {} руб.\n'.format(
+                    tour.name,
+                    tour.date_from,
+                    tour.days,
+                    tour.price,
+                ),
+                reply_markup=btn,
+                disable_notification=True,
+            )
+            u.tours[msg.message_id] = tour
     else:
         u.to_search_fail()
         bot.send_message(
@@ -292,4 +315,4 @@ def after_search(message):
     )
 
 
-bot.polling()
+bot.polling(none_stop=True)

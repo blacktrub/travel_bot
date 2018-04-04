@@ -3,17 +3,19 @@ import json
 import datetime
 
 import requests
-from requests.auth import HTTPBasicAuth
 from transitions import Machine
 from redis import StrictRedis
 import peewee
 
 from .constants import OZON_PARTNER_ID, OZON_API_URL, \
-    OZON_DATE_FORMAT, OZON_STATIC_URL, OZON_USERNAME, OZON_PASSWORD, \
-    REDIS_HOST, REDIS_PORT, REDIS_DB, UserStates, City, Hotel, SearchType, \
-    DB_NAME, DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT
+    OZON_DATE_FORMAT, OZON_STATIC_URL, OZON_AUTH, \
+    REDIS_URL, UserStates, City, Hotel, SearchType, \
+    DB_NAME, DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT, Tour, \
+    OZON_DATETIME_FORMAT, USER_DATE_FORMAT, MAX_RESULTS
 
-redis = StrictRedis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
+from .errors import OzonApiNotFound
+
+redis = StrictRedis.from_url(REDIS_URL)
 db = peewee.PostgresqlDatabase(
     DB_NAME,
     user=DB_USERNAME,
@@ -23,7 +25,17 @@ db = peewee.PostgresqlDatabase(
 )
 
 
-class User:
+class SaveInstance(type):
+    __instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        print()
+        if cls not in cls.__instances:
+            cls.__instances[cls] = super().__call__(*args, **kwargs)
+        return cls.__instances[cls]
+
+
+class User(metaclass=SaveInstance):
     states = UserStates.as_list()
 
     transitions = [
@@ -87,8 +99,13 @@ class User:
         self.place_to = None
         self.date_from = None
         self.date_to = None
+        self.tours = None
 
         self.load()
+
+    @property
+    def place_to_id(self):
+        return self.place_to or self.hotel
 
     def __gen_key(self, postfix: str):
         return '{}_{}'.format(self.user_id, postfix)
@@ -153,6 +170,12 @@ class User:
                       'place_to', 'date_from', 'date_to']
         ]
         redis.delete(*keys)
+        self.machine.set_state(UserStates.SELECT_TYPE.value)
+        self.type = None
+        self.place_from = None
+        self.place_to = None
+        self.date_from = None
+        self.date_to = None
 
     @property
     def is_search_by_hotel(self):
@@ -185,12 +208,12 @@ class OzonApi:
 
     @staticmethod
     def __request(attempts: int=3, **kwargs):
+        headers = {'Authorization': OZON_AUTH}
+        kwargs.update({'headers': headers})
+
         for _ in range(attempts):
             try:
-                return requests.request(
-                    auth=HTTPBasicAuth(OZON_USERNAME, OZON_PASSWORD),
-                    **kwargs
-                ).json(strict=False)
+                return requests.request(**kwargs).json(strict=False)
             except Exception as e:
                 raise e
 
@@ -219,6 +242,10 @@ class OzonApi:
                 for h in json.loads(f.readline())
             ]
 
+    def hotel_name_from_id(self, hotel_id: int):
+        hotel_list = self.hotel_list()
+        return [h for h in hotel_list if int(h.id) == int(hotel_id)][0]
+
     def cities_to(self):
         return self.__get(url=OZON_STATIC_URL + 'Destinations.json')
 
@@ -231,15 +258,15 @@ class OzonApi:
 
     def search_by_hotel(self,
                         place_from_id: int,
-                        hotel_id: int,
+                        place_to_id: int,
                         date_from: datetime.date,
                         date_to: datetime.date,
                         adults: int=1,
-                        dynamic_search: bool=False,
-                        meta_search: bool=True):
+                        dynamic_search: bool = False,
+                        meta_search: bool = False):
         body = {
             'DepartureCityId': place_from_id,
-            'HotelId': hotel_id,
+            'HotelId': place_to_id,
             'DateFrom': date_from.strftime(OZON_DATE_FORMAT),
             'DaysDuration': (date_to - date_from).days,
             'AdultCount': adults,
@@ -259,7 +286,7 @@ class OzonApi:
                         date_to: datetime.date,
                         adults: int = 1,
                         dynamic_search: bool = False,
-                        meta_search: bool = True):
+                        meta_search: bool = False):
         body = {
             'DepartureCityId': place_from_id,
             'GeoObjectId': place_to_id,
@@ -274,6 +301,58 @@ class OzonApi:
             url=OZON_API_URL + 'getOffersByGeoObject',
             body=body,
         )
+
+    def search(self, u: User, attempts: int=3):
+        method = None
+        if u.is_search_by_city:
+            method = api.search_by_place
+        elif u.is_search_by_hotel:
+            method = api.search_by_hotel
+
+        params = {
+            'place_from_id': u.place_from,
+            'place_to_id': u.place_to_id,
+            'date_from': u.date_from,
+            'date_to': u.date_to,
+        }
+        results = []
+        for _ in range(attempts):
+            try:
+                data = method(**params)
+                status = data.get('StatusCode', None)
+                if status is not None and status == 200:
+                    response_results = data.get('Result', None)
+                    if response_results is not None:
+                        results = response_results
+                        break
+                    else:
+                        raise OzonApiNotFound
+            except OzonApiNotFound:
+                params['date_from'] = params['date_from'] \
+                                      - datetime.timedelta(days=1)
+                params['date_to'] = params['date_to'] \
+                                    - datetime.timedelta(days=1)
+            except Exception as e:
+                raise e
+
+        tours = []
+        for result in results[:MAX_RESULTS]:
+            offers = result['HotelOffers']
+            best_offer = min(offers, key=lambda x: x['PriceRur'])
+            tours.append(Tour(
+                name=self.hotel_name_from_id(result['HotelId']).name,
+                id=result['HotelId'],
+                url=result['OffersUrl'],
+                date_from=datetime.datetime.strptime(
+                    best_offer['DateFrom'],
+                    OZON_DATETIME_FORMAT,
+                ).strftime(USER_DATE_FORMAT),
+                days=best_offer['DaysDuration'],
+                price=best_offer['PriceRur'],
+            ))
+
+        return tours
+
 
 api = OzonApi()
 
