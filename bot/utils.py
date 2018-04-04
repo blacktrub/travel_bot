@@ -339,9 +339,10 @@ class OzonApi:
         for result in results[:MAX_RESULTS]:
             offers = []
             if u.is_search_by_city:
-                offers = min(result['HotelOffers'], key=lambda x: x['PriceRur'])
+                offers = min(result.get('HotelOffers', []),
+                             key=lambda x: x['PriceRur'])
             elif u.is_search_by_hotel:
-                offers = result['Offers']
+                offers = result.get('Offers', [])
 
             for offer in offers:
                 tours.append(Tour(
