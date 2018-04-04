@@ -54,7 +54,7 @@ def add_channel(message):
             'Произошла ошибка при добавлении канала, возможно вы пытаетесь '
             'добавить не существующий или приватный канал',
         )
-    except KeyError:
+    except (KeyError, IndexError):
         return bot.send_message(
             message.chat.id,
             'Не верный формат комнады, пример: /add_channel @your_channel_name'
