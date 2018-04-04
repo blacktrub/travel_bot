@@ -323,7 +323,7 @@ class OzonApi:
                 if status is not None and status == 200:
                     response_results = data.get('Result', None)
                     if response_results is not None:
-                        results = response_results
+                        results = list(response_results)
                         break
                     else:
                         raise OzonApiNotFound
