@@ -337,19 +337,24 @@ class OzonApi:
 
         tours = []
         for result in results[:MAX_RESULTS]:
-            offers = result['HotelOffers']
-            best_offer = min(offers, key=lambda x: x['PriceRur'])
-            tours.append(Tour(
-                name=self.hotel_name_from_id(result['HotelId']).name,
-                id=result['HotelId'],
-                url=result['OffersUrl'],
-                date_from=datetime.datetime.strptime(
-                    best_offer['DateFrom'],
-                    OZON_DATETIME_FORMAT,
-                ).strftime(USER_DATE_FORMAT),
-                days=best_offer['DaysDuration'],
-                price=best_offer['PriceRur'],
-            ))
+            offers = []
+            if u.is_search_by_city:
+                offers = min(result['HotelOffers'], key=lambda x: x['PriceRur'])
+            elif u.is_search_by_hotel:
+                offers = result['Offers']
+
+            for offer in offers:
+                tours.append(Tour(
+                    name=self.hotel_name_from_id(result['HotelId']).name,
+                    id=result['HotelId'],
+                    url=result['OffersUrl'],
+                    date_from=datetime.datetime.strptime(
+                        offer['DateFrom'],
+                        OZON_DATETIME_FORMAT,
+                    ).strftime(USER_DATE_FORMAT),
+                    days=offer['DaysDuration'],
+                    price=offer['PriceRur'],
+                ))
 
         return tours
 
