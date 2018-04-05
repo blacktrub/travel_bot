@@ -15,6 +15,8 @@ bot = telebot.TeleBot(TOKEN)
 def welcome(message):
     bot.send_message(message.chat.id, 'Добро пожаловать!')
     BotUser.get_or_create(uid=message.from_user.id)
+    u = User(message.from_user.id)
+    u.clear()
     select_type(message)
 
 
