@@ -1,6 +1,6 @@
-class BaseOzonApiException(Exception):
+class BaseSkyscannerApiException(Exception):
     pass
 
 
-class OzonApiNotFound(BaseOzonApiException):
+class SkyscannerApiNotFound(BaseSkyscannerApiException):
     pass

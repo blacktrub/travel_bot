@@ -3,8 +3,7 @@ import datetime
 import telebot
 from telebot import types
 
-from bot.constants import TOKEN, POOLING_TIMEOUT, SearchType, UserStates, \
-    USER_DATE_FORMAT
+from bot.constants import TOKEN, POOLING_TIMEOUT, UserStates, USER_DATE_FORMAT
 from bot.utils import User, api, search_in_list, BotUser, Channel
 
 
@@ -17,14 +16,14 @@ def welcome(message):
     BotUser.get_or_create(uid=message.from_user.id)
     u = User(message.from_user.id)
     u.clear()
-    select_type(message)
+    select_country_from(message)
 
 
 @bot.message_handler(commands=['new'])
 def new(message):
     u = User(message.from_user.id)
     u.clear()
-    select_type(message)
+    select_country_from(message)
 
 
 @bot.message_handler(commands=['list_channels'])
@@ -80,7 +79,7 @@ def delete_channel(message):
     except KeyError:
         return bot.send_message(
             message.chat.id,
-            'Не верный формат комнады, пример: /delete_channel @your_channel_name'
+            'Не верный формат команды, пример: /delete_channel @your_channel_name'
         )
     except Channel.DoesNotExist:
         return bot.send_message(
@@ -108,28 +107,27 @@ def to_my_channels(message):
             'с помощью команды /add_channel @your_channel_name',
         )
 
-    if message.reply_to_message.message_id not in state_user.tours:
+    ticket = state_user.ticket
+    if ticket is None:
+        return bot.send_message(
+            message.chat.id,
+            'У вас нет активного тикета, повторите поиск',
+        )
+
+    if message.reply_to_message.message_id != ticket.message_id:
         return bot.send_message(
             message.chat.id,
             'Сообщение не найдено, повторите поиск',
         )
 
-    tour = state_user.tours[message.reply_to_message.message_id]
+    ticket = state_user.ticket
     for channel in db_user.channels:
         try:
             btn = types.InlineKeyboardMarkup()
-            btn.add(types.InlineKeyboardButton('Бронировать', url=tour.url))
+            btn.add(types.InlineKeyboardButton('Бронировать', url=ticket.url))
             bot.send_message(
                 channel.uid,
-                'Название отеля: {}\n'
-                'Дата отправления: {}\n'
-                'Кол-во дней: {}\n'
-                'Цена: {} руб.\n'.format(
-                    tour.name,
-                    tour.date_from,
-                    tour.days,
-                    tour.price,
-                ),
+                ticket.message(),
                 reply_markup=btn,
             )
         except telebot.apihelper.ApiException:
@@ -140,88 +138,66 @@ def to_my_channels(message):
             )
 
 
-@bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_TYPE.value)
-def select_type(message):
-    u = User(message.from_user.id)
-    if message.text in [SearchType.CITY.value, SearchType.HOTEL.value]:
-        if message.text == SearchType.CITY.value:
-            u.to_select_tour_place()
-            text = 'Введите название города в который вы хотите поехать:'
-        if message.text == SearchType.HOTEL.value:
-            u.to_select_hotel()
-            text = 'Введите название отеля в который вы хотите поехать:'
-
-        u.type = message.text
-        u.flush()
-        keyboard = types.ReplyKeyboardRemove()
-        return bot.send_message(message.chat.id, text, reply_markup=keyboard)
-
-    keyboard = types.ReplyKeyboardMarkup(row_width=1)
-
-    city_key = types.KeyboardButton(SearchType.CITY.value)
-    hotel_key = types.KeyboardButton(SearchType.HOTEL.value)
-    keyboard.row(city_key, hotel_key)
-    return bot.send_message(
-        message.chat.id,
-        'Выберите тип поиска:',
-        reply_markup=keyboard,
-    )
-
-
-@bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_HOTEL.value)
-def select_hotel(message):
-    u = User(message.from_user.id)
-    founded_hotels = search_in_list(message.text, api.hotel_list())
-    if not founded_hotels:
+@bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_COUNTRY_FROM.value)
+def select_country_from(message):
+    if message.text in ('/new', '/start'):
         return bot.send_message(
             message.chat.id,
-            'Отеля с таким названием не найдено, попробуйте еще раз',
+            'Введите название страны из которой вы отправляетесь'
         )
 
-    u.hotel = founded_hotels[0].id
+    u = User(message.from_user.id)
+    founded_countries = search_in_list(message.text, api.get_counties())
+    if not founded_countries:
+        return bot.send_message(
+            message.chat.id,
+            'Страны с таким названием не найдено, попробуйте еще раз',
+        )
+
+    u.country_from = founded_countries[0].id
     u.to_select_place_from()
     u.flush()
     bot.send_message(
-        message.from_user.id,
-        'Введите название города из которого вы хотите поехать:',
+        message.chat.id,
+        'Введите название города отправления',
     )
 
 
-@bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_TOUR_PLACE.value)
-def select_tour_place(message):
+@bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_PLACE_FROM.value)
+def select_place_from(message):
     u = User(message.from_user.id)
-    founded_cities = search_in_list(message.text, api.list_city_names_to())
+    founded_cities = search_in_list(message.text, api.get_cities())
     if not founded_cities:
         return bot.send_message(
             message.chat.id,
             'Города с таким названием не найдено, попробуйте еще раз',
         )
 
-    u.place_to = founded_cities[0].id
-    u.to_select_place_from()
+    u.place_from = founded_cities[0].id
+    u.to_select_place_to()
     u.flush()
     bot.send_message(
         message.chat.id,
-        'Введите название города из которого вы хотите поехать:',
+        'Введите название города прибытия',
     )
 
 
-@bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_PLACE_FROM.value)
-def select_tour_from(message):
+@bot.message_handler(func=lambda m: User(m.from_user.id).state == UserStates.SELECT_PLACE_TO.value)
+def select_place_to(message):
     u = User(message.from_user.id)
-    founded_cities = search_in_list(message.text, api.list_city_names_from())
+    founded_cities = search_in_list(message.text, api.get_cities())
     if not founded_cities:
         return bot.send_message(
             message.chat.id,
             'Города с таким названием не найдено, попробуйте еще раз'
         )
 
-    u.place_from = founded_cities[0].id
+    u.place_to = founded_cities[0].id
     u.to_select_date_from()
     u.flush()
     bot.send_message(
         message.chat.id,
-        'Введите дату отъезда в формате DD.MM.YYYY:'
+        'Введите дату вылета в формате DD.MM.YYYY'
     )
 
 
@@ -241,7 +217,7 @@ def select_date_from(message):
     u.flush()
     bot.send_message(
         message.chat.id,
-        'Введите дату окончания вашей поездки в формате DD.MM.YYYY:',
+        'Введите дату окончания вашей поездки в формате DD.MM.YYYY',
     )
 
 
@@ -265,33 +241,24 @@ def select_date_to(message):
     u.date_to = date
     u.flush()
 
-    tours = api.search(u)
-    if tours:
-        u.tours = {}
+    ticket = api.search(u)
+    if ticket:
+        u.ticket = ticket
         u.to_search_success()
         bot.send_message(
             message.chat.id,
-            'По вашему запросу найдены следующие туры:',
+            'По вашему запросу найден следующий рейс',
         )
 
-        for tour in tours:
-            btn = types.InlineKeyboardMarkup()
-            btn.add(types.InlineKeyboardButton('Бронировать', url=tour.url))
-            msg = bot.send_message(
-                message.chat.id,
-                'Название отеля: {}\n'
-                'Дата отправления: {}\n'
-                'Кол-во дней: {}\n'
-                'Цена: {} руб.\n'.format(
-                    tour.name,
-                    tour.date_from,
-                    tour.days,
-                    tour.price,
-                ),
-                reply_markup=btn,
-                disable_notification=True,
-            )
-            u.tours[msg.message_id] = tour
+        btn = types.InlineKeyboardMarkup()
+        btn.add(types.InlineKeyboardButton('Бронировать', url=ticket.url))
+        msg = bot.send_message(
+            message.chat.id,
+            ticket.message(),
+            reply_markup=btn,
+            disable_notification=True,
+        )
+        u.ticket.message_id = msg.message_id
     else:
         u.to_search_fail()
         bot.send_message(
@@ -300,7 +267,7 @@ def select_date_to(message):
         )
 
     bot_user = BotUser.get(uid=message.from_user.id)
-    if bot_user.channels and tours:
+    if bot_user.channels and ticket:
         bot.send_message(
             message.chat.id,
             'Для отправки сообщения в ваши каналы, '

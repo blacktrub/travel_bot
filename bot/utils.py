@@ -1,5 +1,3 @@
-import os
-import json
 import datetime
 
 import requests
@@ -7,13 +5,13 @@ from transitions import Machine
 from redis import StrictRedis
 import peewee
 
-from .constants import OZON_PARTNER_ID, OZON_API_URL, \
-    OZON_DATE_FORMAT, OZON_STATIC_URL, OZON_AUTH, \
-    REDIS_URL, UserStates, City, Hotel, SearchType, \
-    DB_NAME, DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT, Tour, \
-    OZON_DATETIME_FORMAT, USER_DATE_FORMAT, MAX_RESULTS
+from .constants import REDIS_URL, UserStates, City, Country, Ticket, DB_NAME, \
+    DB_USERNAME, DB_PASSWORD, DB_HOST, DB_PORT, SKYSCANNER_TOKEN, \
+    SKYSCANNER_API_URL, SKYSCANNER_API_VERSION, SKYSCANNER_CURRENCY, \
+    SKYSCANNER_LOCALE, SKYSCANNER_DATE_FORMAT
 
-from .errors import OzonApiNotFound
+from .errors import SkyscannerApiNotFound
+
 
 redis = StrictRedis.from_url(REDIS_URL)
 db = peewee.PostgresqlDatabase(
@@ -42,29 +40,21 @@ class User(metaclass=SaveInstance):
         {
             'trigger': 'to_start',
             'source': '*',
-            'dest': UserStates.SELECT_TYPE.value,
-        },
-        {
-            'trigger': 'to_select_hotel',
-            'source': UserStates.SELECT_TYPE.value,
-            'dest': UserStates.SELECT_HOTEL.value,
-        },
-        {
-            'trigger': 'to_select_tour_place',
-            'source': UserStates.SELECT_TYPE.value,
-            'dest': UserStates.SELECT_TOUR_PLACE.value,
+            'dest': UserStates.SELECT_COUNTRY_FROM.value,
         },
         {
             'trigger': 'to_select_place_from',
-            'source': [
-                UserStates.SELECT_HOTEL.value,
-                UserStates.SELECT_TOUR_PLACE.value,
-            ],
+            'source': UserStates.SELECT_COUNTRY_FROM.value,
             'dest': UserStates.SELECT_PLACE_FROM.value,
         },
         {
-            'trigger': 'to_select_date_from',
+            'trigger': 'to_select_place_to',
             'source': UserStates.SELECT_PLACE_FROM.value,
+            'dest': UserStates.SELECT_PLACE_TO.value,
+        },
+        {
+            'trigger': 'to_select_date_from',
+            'source': UserStates.SELECT_PLACE_TO.value,
             'dest': UserStates.SELECT_DATE_FROM.value,
         },
         {
@@ -89,23 +79,18 @@ class User(metaclass=SaveInstance):
         self.machine = Machine(
             model=self,
             states=User.states,
-            initial=UserStates.SELECT_TYPE.value,
+            initial=UserStates.SELECT_COUNTRY_FROM.value,
             transitions=User.transitions
         )
 
-        self.type = None
+        self.country_from = None
         self.place_from = None
-        self.hotel = None
         self.place_to = None
         self.date_from = None
         self.date_to = None
-        self.tours = None
+        self.ticket = None
 
         self.load()
-
-    @property
-    def place_to_id(self):
-        return self.place_to or self.hotel
 
     def __gen_key(self, postfix: str):
         return '{}_{}'.format(self.user_id, postfix)
@@ -120,249 +105,169 @@ class User(metaclass=SaveInstance):
         return redis.get(key)
 
     def flush(self):
+        d0 = self.date_from.strftime(SKYSCANNER_DATE_FORMAT) if self.date_from else None
+        d1 = self.date_to.strftime(SKYSCANNER_DATE_FORMAT) if self.date_to else None
         self.__set_to_redis(self.__gen_key('state'), self.state)
-        self.__set_to_redis(self.__gen_key('type'), self.type)
+        self.__set_to_redis(self.__gen_key('country_from'), self.country_from)
         self.__set_to_redis(self.__gen_key('place_from'), self.place_from)
-        self.__set_to_redis(self.__gen_key('hotel'), self.hotel)
         self.__set_to_redis(self.__gen_key('place_to'), self.place_to)
-        self.__set_to_redis(self.__gen_key('date_from'), self.date_from)
-        self.__set_to_redis(self.__gen_key('date_to'), self.date_to)
+        self.__set_to_redis(self.__gen_key('date_from'), d0)
+        self.__set_to_redis(self.__gen_key('date_to'), d1)
 
     def load(self):
         state = self.__get_from_redis(self.__gen_key('state'))
         if state is not None:
             self.machine.set_state(state.decode())
 
-        t = self.__get_from_redis(self.__gen_key('type'))
-        if t is not None:
-            self.type = t.decode()
+        country_from = self.__get_from_redis(self.__gen_key('country_from'))
+        if country_from is not None:
+            self.country_from = country_from.decode()
 
         place_from = self.__get_from_redis(self.__gen_key('place_from'))
         if place_from is not None:
-            self.place_from = int(place_from)
-
-        hotel = self.__get_from_redis(self.__gen_key('hotel'))
-        if hotel is not None:
-            self.hotel = int(hotel)
+            self.place_from = place_from.decode()
 
         place_to = self.__get_from_redis(self.__gen_key('place_to'))
         if place_to is not None:
-            self.place_to = int(place_to)
+            self.place_to = place_to.decode()
 
         date_from = self.__get_from_redis(self.__gen_key('date_from'))
         if date_from is not None:
             self.date_from = datetime.datetime.strptime(
                 date_from.decode(),
-                OZON_DATE_FORMAT,
+                SKYSCANNER_DATE_FORMAT,
             ).date()
 
         date_to = self.__get_from_redis(self.__gen_key('date_to'))
         if date_to is not None:
             self.date_to = datetime.datetime.strptime(
                 date_to.decode(),
-                OZON_DATE_FORMAT,
+                SKYSCANNER_DATE_FORMAT,
             ).date()
 
     def clear(self):
         keys = [
             self.__gen_key(k)
-            for k in ['state', 'type', 'place_from',
-                      'place_to', 'date_from', 'date_to']
+            for k in ['state', 'place_from', 'place_to',
+                      'date_from', 'date_to']
         ]
         redis.delete(*keys)
-        self.machine.set_state(UserStates.SELECT_TYPE.value)
-        self.type = None
+        self.machine.set_state(UserStates.SELECT_COUNTRY_FROM.value)
+        self.country_from = None
         self.place_from = None
         self.place_to = None
         self.date_from = None
         self.date_to = None
 
-    @property
-    def is_search_by_hotel(self):
-        return self.type == SearchType.HOTEL.value
 
-    @property
-    def is_search_by_city(self):
-        return self.type == SearchType.CITY.value
+class SkyscannerApi:
+    def __init__(self, token: str=SKYSCANNER_TOKEN):
+        self.token = token
+        # When you need to make a client-side call please insure that you use
+        # your short API key (the first 16 characters of you key).
+        self.short_token = self.token[:16]
 
+    def request(self,
+                url: str,
+                params: dict=None,
+                timeout: int=10,
+                attempts: int=3):
+        if params is None:
+            params = {}
 
-class OzonApi:
-    def __init__(self):
-        pass
-
-    def __post(self, url: str, body: dict=None, timeout: int=10):
-        return self.__request(
-            method='post',
-            url=url,
-            json=body,
-            timeout=timeout,
-        )
-
-    def __get(self, url: str, query: dict=None, timeout: int=10):
-        return self.__request(
-            method='get',
-            url=url,
-            params=query,
-            timeout=timeout,
-        )
-
-    @staticmethod
-    def __request(attempts: int=3, **kwargs):
-        headers = {'Authorization': OZON_AUTH}
-        kwargs.update({'headers': headers})
-
+        params.update({'apikey': self.token})
+        headers = {
+            'Accept': 'application/json',
+        }
         for _ in range(attempts):
             try:
-                return requests.request(**kwargs).json(strict=False)
+                return requests.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=timeout,
+                ).json()
             except Exception as e:
                 raise e
 
-    def cities_from(self):
-        return self.__get(url=OZON_STATIC_URL + 'departures.json')
-
-    def list_city_names_from(self):
-        return [
-            City(city['name_ru'], city['id'])
-            for city in self.cities_from()
-        ]
-
-    def meal_types(self):
-        return self.__get(url=OZON_STATIC_URL + 'MealTypes.json')
-
-    def hotel_list(self):
-        # we take info about the hotels from file
-        # because a json data from api contains syntax errors
-        hotel_file = os.path.join(
-            os.path.abspath(os.path.dirname(__file__)),
-            'hotels',
+    def get_all_geo(self):
+        url = '{}/{}/{}'.format(
+            SKYSCANNER_API_URL,
+            'geo',
+            SKYSCANNER_API_VERSION,
         )
-        with open(hotel_file, encoding='utf-8') as f:
-            return [
-                Hotel(h['name'], h['id'])
-                for h in json.loads(f.readline())
-            ]
+        return self.request(url, params={'languageid': SKYSCANNER_LOCALE})
 
-    def hotel_name_from_id(self, hotel_id: int):
-        hotel_list = self.hotel_list()
-        return [h for h in hotel_list if int(h.id) == int(hotel_id)][0]
-
-    def cities_to(self):
-        return self.__get(url=OZON_STATIC_URL + 'Destinations.json')
-
-    def list_city_names_to(self):
-        return [
-            City(city['name_ru'], city['id'])
-            for country in self.cities_to()
-            for city in country['resort']
-        ]
-
-    def search_by_hotel(self,
-                        place_from_id: int,
-                        place_to_id: int,
-                        date_from: datetime.date,
-                        date_to: datetime.date,
-                        adults: int=1,
-                        dynamic_search: bool = False,
-                        meta_search: bool = False):
-        body = {
-            'DepartureCityId': place_from_id,
-            'HotelId': place_to_id,
-            'DateFrom': date_from.strftime(OZON_DATE_FORMAT),
-            'DaysDuration': (date_to - date_from).days,
-            'AdultCount': adults,
-            'PartnerId': OZON_PARTNER_ID,
-            'OnlyDynamicPackages': dynamic_search,
-            'MetaSearch': meta_search,
-        }
-        return self.__post(
-            url=OZON_API_URL + 'getOffersByHotel',
-            body=body,
+    def get_counties(self):
+        data = self.get_all_geo()
+        return (
+            Country(country['Name'], country['Id'])
+            for continents in data['Continents']
+            for country in continents['Countries']
         )
 
-    def search_by_place(self,
-                        place_from_id: int,
-                        place_to_id: int,
-                        date_from: datetime.date,
-                        date_to: datetime.date,
-                        adults: int = 1,
-                        dynamic_search: bool = False,
-                        meta_search: bool = False):
-        body = {
-            'DepartureCityId': place_from_id,
-            'GeoObjectId': place_to_id,
-            'DateFrom': date_from.strftime(OZON_DATE_FORMAT),
-            'DaysDuration': (date_to - date_from).days,
-            'AdultCount': adults,
-            'PartnerId': OZON_PARTNER_ID,
-            'OnlyDynamicPackages': dynamic_search,
-            'MetaSearch': meta_search,
-        }
-        return self.__post(
-            url=OZON_API_URL + 'getOffersByGeoObject',
-            body=body,
+    def get_cities(self):
+        data = self.get_all_geo()
+        return (
+            City(city['Name'], city['Id'])
+            for continent in data['Continents']
+            for country in continent['Countries']
+            for city in country['Cities']
+        )
+
+    def make_booking_url(self, u: User):
+        return '{}/{}/{}/{}/{}/{}/{}/{}/{}/{}?apiKey={}'.format(
+            SKYSCANNER_API_URL,
+            'referral',
+            SKYSCANNER_API_VERSION,
+            u.country_from,
+            SKYSCANNER_CURRENCY,
+            SKYSCANNER_LOCALE,
+            u.place_from,
+            u.place_to,
+            u.date_from.strftime(SKYSCANNER_DATE_FORMAT),
+            u.date_to.strftime(SKYSCANNER_DATE_FORMAT),
+            self.short_token,
         )
 
     def search(self, u: User, attempts: int=3):
-        method = None
-        if u.is_search_by_city:
-            method = api.search_by_place
-        elif u.is_search_by_hotel:
-            method = api.search_by_hotel
-
-        params = {
-            'place_from_id': u.place_from,
-            'place_to_id': u.place_to_id,
-            'date_from': u.date_from,
-            'date_to': u.date_to,
-        }
-        results = []
+        data = None
         for _ in range(attempts):
             try:
-                data = method(**params)
-                status = data.get('StatusCode', None)
-                if status is not None and status == 200:
-                    response_results = data.get('Result', None)
-                    if response_results is not None:
-                        results = response_results
-                        if not isinstance(results, list):
-                            results = [results]
-                        break
-                    else:
-                        raise OzonApiNotFound
-            except OzonApiNotFound:
-                params['date_from'] = params['date_from'] \
-                                      - datetime.timedelta(days=1)
-                params['date_to'] = params['date_to'] \
-                                    - datetime.timedelta(days=1)
+                url = '{}/{}/{}/{}/{}/{}/{}/{}/{}/{}'.format(
+                    SKYSCANNER_API_URL,
+                    'browsequotes',
+                    SKYSCANNER_API_VERSION,
+                    u.country_from,
+                    SKYSCANNER_CURRENCY,
+                    SKYSCANNER_LOCALE,
+                    u.place_from,
+                    u.place_to,
+                    u.date_from.strftime(SKYSCANNER_DATE_FORMAT),
+                    u.date_to.strftime(SKYSCANNER_DATE_FORMAT),
+                )
+                data = self.request(url)
+                if data.get('Quotes', None) is None:
+                    raise SkyscannerApiNotFound
+                else:
+                    break
+
+            except SkyscannerApiNotFound:
+                u.date_from = u.date_from - datetime.timedelta(days=1)
+                u.date_to = u.date_to - datetime.timedelta(days=1)
+                continue
             except Exception as e:
                 raise e
 
-        tours = []
-        for result in results[:MAX_RESULTS]:
-            offers = []
-            if u.is_search_by_city:
-                offers = [min(result.get('HotelOffers', []),
-                             key=lambda x: x['PriceRur'])]
-            elif u.is_search_by_hotel:
-                offers = result.get('Offers', [])
+        if data is None or not data.get('Quotes'):
+            return
 
-            for offer in offers:
-                tours.append(Tour(
-                    name=self.hotel_name_from_id(result['HotelId']).name,
-                    id=result['HotelId'],
-                    url=result['OffersUrl'],
-                    date_from=datetime.datetime.strptime(
-                        offer['DateFrom'],
-                        OZON_DATETIME_FORMAT,
-                    ).strftime(USER_DATE_FORMAT),
-                    days=offer['DaysDuration'],
-                    price=offer['PriceRur'],
-                ))
-
-        return tours
+        ticket = Ticket(data)
+        ticket.url = self.make_booking_url(u)
+        return ticket
 
 
-api = OzonApi()
+api = SkyscannerApi()
 
 
 def search_in_list(query: str, data: list):
